@@ -1,0 +1,109 @@
+# ==============================================================================
+# Gitignore for Deep Learning / PyTorch Change Detection Model (Main_model)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Python Cache & Byte-compiled Files
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.pyo
+
+# ------------------------------------------------------------------------------
+# 2. Environments & Virtual Environments
+# ------------------------------------------------------------------------------
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+conda-env/
+
+# ------------------------------------------------------------------------------
+# 3. IDE, Editor & OS Files
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+.settings/
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+
+# ------------------------------------------------------------------------------
+# 4. Jupyter Notebooks
+# ------------------------------------------------------------------------------
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# ------------------------------------------------------------------------------
+# 5. Deep Learning Model Weights & Checkpoints
+# ------------------------------------------------------------------------------
+*.pth
+*.pt
+*.ckpt
+*.onnx
+*.h5
+*.hdf5
+*.bin
+*.safetensors
+*.pkl
+*.pickle
+*.state_dict
+
+# ------------------------------------------------------------------------------
+# 6. Training Outputs, Experiment Runs & Tracking
+# ------------------------------------------------------------------------------
+outputs/
+checkpoints/
+runs/
+wandb/
+*.wandb
+tb_logs/
+experiments/
+eval_results/
+vis/
+
+# ------------------------------------------------------------------------------
+# 7. Logs & Monitoring
+# ------------------------------------------------------------------------------
+*.log
+logs/
+slurm-*.out
+pip-log.txt
+pip-delete-this-directory.txt
+events.out.tfevents.*
+*.tfevents.*
+
+# ------------------------------------------------------------------------------
+# 9. Python Distribution & Packaging
+# ------------------------------------------------------------------------------
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+a.py
+confrence.csv
