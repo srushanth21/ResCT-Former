@@ -29,9 +29,11 @@ def get_dataloaders(
     val_ds = LEVIRCDDataset(dataset_root, split="val", img_size=img_size, augment=False)
     test_ds = LEVIRCDDataset(dataset_root, split="test", img_size=img_size, augment=False)
 
-    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    pw = num_workers > 0
+    pf = 2 if pw else None
+    train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True, persistent_workers=pw, prefetch_factor=pf)
+    val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=pw, prefetch_factor=pf)
+    test_loader = DataLoader(test_ds, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True, persistent_workers=pw, prefetch_factor=pf)
     return train_loader, val_loader, test_loader
 
 
@@ -49,10 +51,22 @@ def save_checkpoint(path: str, model: torch.nn.Module, optimizer: torch.optim.Op
 
 
 def load_checkpoint(path: str, model: torch.nn.Module, optimizer: Optional[torch.optim.Optimizer] = None):
-    ckpt = torch.load(path, map_location="cpu")
-    model.load_state_dict(ckpt["model"], strict=True)
-    if optimizer is not None and "optimizer" in ckpt:
-        optimizer.load_state_dict(ckpt["optimizer"])
+    ckpt = torch.load(path, map_location="cpu", weights_only=False)
+    
+    # Check for new format
+    if "model_state_dict" in ckpt:
+        model.load_state_dict(ckpt["model_state_dict"], strict=True)
+        if optimizer is not None and "optimizer_state_dict" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer_state_dict"])
+    # Check for old format
+    elif "model" in ckpt:
+        model.load_state_dict(ckpt["model"], strict=True)
+        if optimizer is not None and "optimizer" in ckpt:
+            optimizer.load_state_dict(ckpt["optimizer"])
+    # Assume raw state dict
+    else:
+        model.load_state_dict(ckpt, strict=True)
+        
     return ckpt
 
 

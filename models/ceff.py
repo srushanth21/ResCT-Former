@@ -3,30 +3,24 @@ import torch.nn as nn
 
 
 class CEFF(nn.Module):
-    """Cross-level Edge Feature Fusion (CEFF).
+    """Cross-level Edge Feature Fusion (CEFF) - Non-Linear Fusion Update.
 
-    - GAP(F_pre + F_post)
-    - Shared MLP
-    - Softmax -> weights
-    - Fuse features
+    Instead of linear subtraction, this uses concatenation and a spatial convolution
+    to learn complex, non-linear change features from perfectly aligned feature maps.
     """
 
     def __init__(self, channels: int, reduction: int = 2):
         super().__init__()
-        hidden = max(channels // reduction, 8)
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self.mlp = nn.Sequential(
-            nn.Linear(channels, hidden),
-            nn.ReLU(inplace=True),
-            nn.Linear(hidden, channels * 2),
+        # We replace the channel attention MLP with a non-linear spatial fusion block
+        self.fuse = nn.Sequential(
+            nn.Conv2d(channels * 2, channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(channels),
+            nn.ReLU(inplace=True)
         )
 
     def forward(self, f_pre: torch.Tensor, f_post: torch.Tensor) -> torch.Tensor:
-        b, c, _, _ = f_pre.shape
-        s = f_pre + f_post
-        g = self.gap(s).view(b, c)
-        w = self.mlp(g).view(b, 2, c, 1, 1)
-        w = torch.softmax(w, dim=1)
-        w_pre = w[:, 0]
-        w_post = w[:, 1]
-        return f_pre * w_pre + f_post * w_post
+        # Concatenate pre and post along the channel dimension -> [B, 2C, H, W]
+        fcat = torch.cat([f_pre, f_post], dim=1)
+        # Learn non-linear differences -> [B, C, H, W]
+        change_features = self.fuse(fcat)
+        return change_features

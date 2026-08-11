@@ -10,7 +10,7 @@ class Config:
     batch_size: int = 8
     num_workers: int = 2
 
-    epochs: int = 200
+    epochs: int = 100
     lr: float = 1e-4
     weight_decay: float = 1e-4
     grad_clip_norm: float = 1.0

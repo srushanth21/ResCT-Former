@@ -58,6 +58,7 @@ def main():
     parser.add_argument("--ssa_heads", type=int, default=Config().ssa_heads)
     parser.add_argument("--ssa_reduce_ratio", type=int, default=Config().ssa_reduce_ratio)
     parser.add_argument("--ssa_max_offset", type=float, default=Config().ssa_max_offset)
+    parser.add_argument("--exp_mode", type=str, default="E0", help="Ablation experiment mode: E0, E1, E2, E3, E4, E5")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -75,6 +76,7 @@ def main():
         ssa_heads=args.ssa_heads,
         ssa_reduce_ratio=args.ssa_reduce_ratio,
         ssa_max_offset=args.ssa_max_offset,
+        exp_mode=args.exp_mode,
     ).to(device)
 
     criterion = BCEDiceLoss()

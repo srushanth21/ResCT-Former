@@ -15,6 +15,7 @@ from dataset.transforms import (
     RandomHorizontalFlip,
     RandomRotate90,
     RandomVerticalFlip,
+    RandomTemporalSwap,
 )
 
 
@@ -44,6 +45,7 @@ class LEVIRCDDataset(Dataset):
                         RandomHorizontalFlip(),
                         RandomVerticalFlip(),
                         RandomRotate90(),
+                        RandomTemporalSwap(),
                         RandomBrightnessContrast(),
                         ColorJitter(),
                         GaussianBlur(),

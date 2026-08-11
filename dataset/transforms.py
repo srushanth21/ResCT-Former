@@ -27,6 +27,19 @@ class RandomHorizontalFlip:
         return pre.copy(), post.copy(), mask.copy()
 
 
+class RandomTemporalSwap:
+    """Randomly swaps the pre and post images. This teaches the network that 
+    Change Detection is symmetrical (A->B change is the same as B->A change)."""
+    def __init__(self, p: float = 0.5) -> None:
+        self.p = float(p)
+
+    def __call__(self, pre: np.ndarray, post: np.ndarray, mask: np.ndarray):
+        if random.random() < self.p:
+            return post.copy(), pre.copy(), mask
+        return pre, post, mask
+
+
+
 class RandomVerticalFlip:
     def __init__(self, p: float = 0.5) -> None:
         self.p = float(p)
@@ -59,12 +72,16 @@ class RandomBrightnessContrast:
         self.p = float(p)
 
     def __call__(self, pre: np.ndarray, post: np.ndarray, mask: np.ndarray):
-        if random.random() >= self.p:
-            return pre, post, mask
-        alpha = 1.0 + random.uniform(-self.contrast, self.contrast)
-        beta = random.uniform(-self.brightness, self.brightness)
-        pre = np.clip(pre * alpha + beta, 0.0, 1.0)
-        post = np.clip(post * alpha + beta, 0.0, 1.0)
+        if random.random() < self.p:
+            alpha_pre = 1.0 + random.uniform(-self.contrast, self.contrast)
+            beta_pre = random.uniform(-self.brightness, self.brightness)
+            pre = np.clip(pre * alpha_pre + beta_pre, 0.0, 1.0)
+            
+        if random.random() < self.p:
+            alpha_post = 1.0 + random.uniform(-self.contrast, self.contrast)
+            beta_post = random.uniform(-self.brightness, self.brightness)
+            post = np.clip(post * alpha_post + beta_post, 0.0, 1.0)
+            
         return pre, post, mask
 
 
@@ -112,17 +129,27 @@ class ColorJitter:
         self.p = float(p)
 
     def __call__(self, pre: np.ndarray, post: np.ndarray, mask: np.ndarray):
-        if random.random() >= self.p:
-            return pre, post, mask
-        ops = [
-            lambda x: self._adjust_brightness(x),
-            lambda x: self._adjust_contrast(x),
-            lambda x: self._adjust_saturation_hue(x),
-        ]
-        random.shuffle(ops)
-        for op in ops:
-            pre = op(pre)
-            post = op(post)
+        # Independently apply color jitter to pre and post
+        if random.random() < self.p:
+            ops_pre = [
+                lambda x: self._adjust_brightness(x),
+                lambda x: self._adjust_contrast(x),
+                lambda x: self._adjust_saturation_hue(x),
+            ]
+            random.shuffle(ops_pre)
+            for op in ops_pre:
+                pre = op(pre)
+                
+        if random.random() < self.p:
+            ops_post = [
+                lambda x: self._adjust_brightness(x),
+                lambda x: self._adjust_contrast(x),
+                lambda x: self._adjust_saturation_hue(x),
+            ]
+            random.shuffle(ops_post)
+            for op in ops_post:
+                post = op(post)
+                
         return pre, post, mask
 
     def _adjust_brightness(self, img: np.ndarray) -> np.ndarray:

@@ -10,7 +10,7 @@ class ResNet34Backbone(nn.Module):
 
     def __init__(self):
         super().__init__()
-        m = models.resnet34(weights=None)
+        m = models.resnet34(weights="DEFAULT")
 
         self.stem = nn.Sequential(m.conv1, m.bn1, m.relu, m.maxpool)
         self.layer1 = m.layer1  # 64

@@ -2,6 +2,7 @@ import argparse
 import gc
 import math
 import os
+import sys
 
 import torch
 from tqdm import tqdm
@@ -61,10 +62,42 @@ def main():
     parser.add_argument("--ssa_heads", type=int, default=Config().ssa_heads)
     parser.add_argument("--ssa_reduce_ratio", type=int, default=Config().ssa_reduce_ratio)
     parser.add_argument("--ssa_max_offset", type=float, default=Config().ssa_max_offset)
+    parser.add_argument("--exp_mode", type=str, default="E0", help="Ablation experiment mode: E0, E1, E2, E3, E4, E5")
 
     parser.add_argument("--seed", type=int, default=Config().seed)
 
     args = parser.parse_args()
+
+    # Offset loss is now enabled by default as part of the Stop Bleeding fixes.
+    # The default value from Config (0.01 or 0.001) will be used unless overridden.
+    if args.output_dir == "outputs":
+        exp_names = {
+            "E0": "E0_baseline",
+            "E1": "E1_LayerNorm",
+            "E2": "E2_DepthwiseDownsample",
+            "E3": "E3_FFN",
+            "E4": "E4_OffsetReg",
+            "E5": "E5_PositionalEncoding",
+        }
+        subfolder = exp_names.get(args.exp_mode.upper(), args.exp_mode)
+        args.output_dir = os.path.join("outputs", subfolder)
+
+    # -------------------------
+    # Setup Log File
+    # -------------------------
+
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    base_log_name = f"train{args.exp_mode.upper()}"
+    log_idx = 1
+    while True:
+        log_file_path = os.path.join(args.output_dir, f"{base_log_name}_{log_idx}.log")
+        if not os.path.exists(log_file_path):
+            break
+        log_idx += 1
+        
+    args.log_file_path = log_file_path
+    print(f"Logging to: {args.log_file_path}")
 
     # -------------------------
     # Setup
@@ -72,7 +105,8 @@ def main():
 
     set_seed(args.seed)
 
-    torch.backends.cudnn.benchmark = True
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.enabled = True
 
     gc.collect()
@@ -102,15 +136,23 @@ def main():
         ssa_heads=args.ssa_heads,
         ssa_reduce_ratio=args.ssa_reduce_ratio,
         ssa_max_offset=args.ssa_max_offset,
+        exp_mode=args.exp_mode,
     ).to(device)
 
     criterion = BCEDiceLoss()
 
-    optimizer = torch.optim.AdamW(
-        model.parameters(),
-        lr=args.lr,
-        weight_decay=args.weight_decay
-    )
+    backbone_params = []
+    other_params = []
+    for name, param in model.named_parameters():
+        if "backbone" in name:
+            backbone_params.append(param)
+        else:
+            other_params.append(param)
+
+    optimizer = torch.optim.AdamW([
+        {"params": backbone_params, "lr": args.lr * 0.1},
+        {"params": other_params, "lr": args.lr}
+    ], weight_decay=args.weight_decay)
 
     # -------------------------
     # Scheduler
@@ -259,9 +301,13 @@ def main():
 
             with autocast_ctx:
 
-                logits = model(pre, post)
+                logits, logits_f2, logits_f3 = model(pre, post)
 
-                seg_loss = criterion(logits, mask)
+                loss_final = criterion(logits, mask)
+                loss_f2 = criterion(logits_f2, mask)
+                loss_f3 = criterion(logits_f3, mask)
+
+                seg_loss = loss_final + 0.4 * loss_f3 + 0.2 * loss_f2
 
                 offset_reg = model.get_offset_reg_loss()
 
@@ -334,9 +380,6 @@ def main():
 
         scheduler.step()
 
-        gc.collect()
-        torch.cuda.empty_cache()
-
         # -------------------------
         # Metrics
         # -------------------------
@@ -347,7 +390,7 @@ def main():
 
         lr_now = float(optimizer.param_groups[0]["lr"])
 
-        print(
+        summary_str = (
             f"epoch={epoch:03d} "
             f"lr={lr_now:.6f} "
             f"train(loss={train_loss:.4f}, iou={train_iou:.4f}, "
@@ -355,6 +398,9 @@ def main():
             f"val(loss={val_loss:.4f}, iou={val_iou:.4f}, "
             f"f1={val_f1:.4f}, oa={val_oa:.4f})"
         )
+        print(summary_str)
+        with open(args.log_file_path, "a", encoding="utf-8") as f:
+            f.write(summary_str + "\n")
 
         # -------------------------
         # Save Last Checkpoint
@@ -384,7 +430,10 @@ def main():
                 "best_iou": best_iou,
             }, best_path)
 
-            print(f"saved_best_iou={best_iou:.4f}")
+            best_str = f"saved_best_iou={best_iou:.4f}"
+            print(best_str)
+            with open(args.log_file_path, "a", encoding="utf-8") as f:
+                f.write(best_str + "\n")
 
 
 if __name__ == "__main__":
