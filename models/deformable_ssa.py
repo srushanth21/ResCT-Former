@@ -69,8 +69,9 @@ class DeformableSSA(nn.Module):
         self.mlp = nn.Sequential(
             nn.Linear(channels, 4 * channels),
             nn.GELU(),
-            nn.Dropout(0.1),
+            nn.Dropout(0.2),
             nn.Linear(4 * channels, channels),
+            nn.Dropout(0.1),
         )
 
         self.last_offset: torch.Tensor | None = None

@@ -10,7 +10,7 @@ from tqdm import tqdm
 from config import Config
 from models.model import AdaptiveScratchFormerCD
 from utils.losses import BCEDiceLoss
-from utils.metrics import MetricTracker, batch_metrics_from_logits
+from utils.metrics import MetricTracker, batch_metrics_from_logits, batch_counts_from_logits
 from utils.train_utils import get_dataloaders, set_seed
 
 
@@ -26,13 +26,19 @@ def evaluate(model, loader, criterion, device, desc: str):
         post = batch["post"].to(device, non_blocking=True)
         mask = batch["mask"].to(device, non_blocking=True)
 
-        logits = model(pre, post)
-        loss = criterion(logits, mask)
+        if hasattr(torch, "amp"):
+            autocast_ctx = torch.amp.autocast("cuda")
+        else:
+            autocast_ctx = torch.cuda.amp.autocast()
 
-        iou, f1, oa = batch_metrics_from_logits(logits, mask)
+        with autocast_ctx:
+            logits = model(pre, post)
+            loss = criterion(logits, mask)
+
+            tp, fp, fn, tn = batch_counts_from_logits(logits, mask)
 
         bs = pre.size(0)
-        tracker.update(loss.item(), iou, f1, oa, bs)
+        tracker.update(loss.item(), tp, fp, fn, tn, bs)
 
     return tracker
 
@@ -161,23 +167,25 @@ def main():
     warmup_epochs = max(int(args.warmup_epochs), 0)
     total_epochs = int(args.epochs)
 
-    cosine_epochs = max(total_epochs - warmup_epochs, 1)
-
-    def lr_lambda(epoch: int):
-
-        # Warmup
-        if warmup_epochs > 0 and epoch < warmup_epochs:
-            return float(epoch + 1) / float(warmup_epochs)
-
-        # Cosine
-        t = float(epoch - warmup_epochs)
-        t = max(min(t, float(cosine_epochs)), 0.0)
-
-        return 0.5 * (1.0 + math.cos(math.pi * t / float(cosine_epochs)))
-
-    scheduler = torch.optim.lr_scheduler.LambdaLR(
+    # Warmup scheduler (linear ramp from 0 to base LR)
+    warmup_scheduler = torch.optim.lr_scheduler.LinearLR(
         optimizer,
-        lr_lambda=lr_lambda
+        start_factor=1.0 / max(warmup_epochs, 1),
+        end_factor=1.0,
+        total_iters=warmup_epochs
+    )
+
+    # Single smooth cosine decay from base LR to eta_min over the remaining epochs
+    cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer,
+        T_max=total_epochs - warmup_epochs,
+        eta_min=1e-6
+    )
+
+    scheduler = torch.optim.lr_scheduler.SequentialLR(
+        optimizer,
+        schedulers=[warmup_scheduler, cosine_scheduler],
+        milestones=[warmup_epochs]
     )
 
     # -------------------------
@@ -313,6 +321,11 @@ def main():
 
                 loss = seg_loss + float(args.lambda_offset) * offset_reg
 
+            # NaN guard: skip this batch entirely if loss is NaN/Inf
+            if not torch.isfinite(loss):
+                optimizer.zero_grad(set_to_none=True)
+                continue
+
             # -------------------------
             # Backward
             # -------------------------
@@ -349,15 +362,14 @@ def main():
 
             with torch.no_grad():
 
+                tp, fp, fn, tn = batch_counts_from_logits(logits, mask)
                 iou, f1, oa = batch_metrics_from_logits(logits, mask)
 
             bs = pre.size(0)
 
             train_tr.update(
                 loss.item(),
-                iou,
-                f1,
-                oa,
+                tp, fp, fn, tn,
                 bs
             )
 

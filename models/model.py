@@ -3,13 +3,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from models.backbone import ResNet34Backbone
-from models.deformable_ssa import DeformableSSA
+from models.cross_temporal_attn import CrossTemporalAttention
 from models.ceff import CEFF
-from models.decoder import SegFormerStyleDecoder
+from models.decoder import ProgressiveDecoder
 
 
 class AdaptiveScratchFormerCD(nn.Module):
-    """Adaptive-ScratchFormer-CD (Deformable SSA Version)."""
+    """Adaptive-ScratchFormer-CD with Cross-Temporal Attention.
+
+    Architecture:
+        1. Shared ResNet34 backbone extracts features from pre and post independently.
+        2. CrossTemporalAttention at stages 3 & 4: pre features attend to post
+           features (and vice versa), learning temporal relationships.
+        3. CEFF computes symmetric change features from the cross-attended features.
+        4. ProgressiveDecoder upsamples step-by-step for sharp boundaries.
+        5. Deep Supervision on intermediate stages during training.
+    """
 
     def __init__(
         self,
@@ -23,72 +32,54 @@ class AdaptiveScratchFormerCD(nn.Module):
 
         self.backbone = ResNet34Backbone()
 
-        # Ablation mode is now deprecated, baseline includes all fixes
-
-        # Deformable SSA only at stage 3 & 4
-        self.dssa3 = DeformableSSA(
-            256,
-            num_heads=ssa_heads,
-            reduce_ratio=ssa_reduce_ratio,
-            max_offset=ssa_max_offset,
+        # Cross-Temporal Attention at stages 3 & 4
+        self.cross_attn3 = CrossTemporalAttention(
+            256, num_heads=ssa_heads, reduce_ratio=ssa_reduce_ratio,
         )
-        self.dssa4 = DeformableSSA(
-            512,
-            num_heads=ssa_heads,
-            reduce_ratio=ssa_reduce_ratio,
-            max_offset=ssa_max_offset,
+        self.cross_attn4 = CrossTemporalAttention(
+            512, num_heads=ssa_heads, reduce_ratio=ssa_reduce_ratio,
         )
 
-        # CEFF
+        # CEFF (symmetric abs diff + conv)
         self.ceff1 = CEFF(64)
         self.ceff2 = CEFF(128)
         self.ceff3 = CEFF(256)
         self.ceff4 = CEFF(512)
 
-        self.decoder = SegFormerStyleDecoder(embed_dim=embed_dim)
-        
+        self.decoder = ProgressiveDecoder(embed_dim=embed_dim)
+
         # Deep Supervision Classifiers
         self.classifier_f2 = nn.Conv2d(128, 1, kernel_size=1)
         self.classifier_f3 = nn.Conv2d(256, 1, kernel_size=1)
 
-        self._offset_reg_loss: torch.Tensor | None = None
-
     def forward(self, pre: torch.Tensor, post: torch.Tensor):
+        # 1. EXTRACT features with shared backbone
         pre_c1, pre_c2, pre_c3, pre_c4 = self.backbone(pre)
         post_c1, post_c2, post_c3, post_c4 = self.backbone(post)
 
-        # 1. FUSE FIRST (Solves Deformable Spatial Misalignment)
+        # 2. CROSS-TEMPORAL ATTENTION: each image attends to the other
+        pre_c3, post_c3 = self.cross_attn3(pre_c3, post_c3)
+        pre_c4, post_c4 = self.cross_attn4(pre_c4, post_c4)
+
+        # 3. FUSE: symmetric change features
         f1 = self.ceff1(pre_c1, post_c1)
         f2 = self.ceff2(pre_c2, post_c2)
         f3 = self.ceff3(pre_c3, post_c3)
         f4 = self.ceff4(pre_c4, post_c4)
 
-        # 2. THEN ATTEND (Apply Deformable Attention to the Change Features)
-        f3 = self.dssa3(f3)
-        f4 = self.dssa4(f4)
-
-        # Handle offset regularization
-        regs = [r for r in [self.dssa3.last_offset_reg, self.dssa4.last_offset_reg] if r is not None]
-        if len(regs) == 0:
-            self._offset_reg_loss = None
-        else:
-            self._offset_reg_loss = sum(regs)
-
-        # 3. DECODE
+        # 4. DECODE
         logits = self.decoder(f1, f2, f3, f4, out_size=pre.shape[2:])
-        
-        # 4. DEEP SUPERVISION
+
+        # 5. DEEP SUPERVISION
         if self.training:
-            # Interpolate intermediate predictions to full size for loss calculation
             out_size = pre.shape[2:]
             logits_f2 = F.interpolate(self.classifier_f2(f2), size=out_size, mode="bilinear", align_corners=False)
             logits_f3 = F.interpolate(self.classifier_f3(f3), size=out_size, mode="bilinear", align_corners=False)
             return logits, logits_f2, logits_f3
-            
+
         return logits
 
     def get_offset_reg_loss(self) -> torch.Tensor:
-        if self._offset_reg_loss is None:
-            # keep dtype/device consistent
-            return torch.zeros((), device=next(self.parameters()).device)
-        return self._offset_reg_loss
+        """Kept for backward compatibility with train.py. Returns 0."""
+        return torch.zeros((), device=next(self.parameters()).device)
+

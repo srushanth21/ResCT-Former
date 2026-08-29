@@ -39,7 +39,7 @@ Each experiment automatically creates its own isolated output directory under `o
 
 | Experiment | Description | Command | Output Directory |
 | :--- | :--- | :--- | :--- |
-| **E0** | Baseline (No LayerNorm, AvgPool, No FFN) | `python train.py --exp_mode E0` | `outputs/E0_baseline/` |
+| **E0** | Baseline (No LayerNorm, AvgPool, No FFN) | ` ` | `outputs/E0_baseline/` |
 | **E1** | **+ LayerNorm** in Attention | `python train.py --exp_mode E1` | `outputs/E1_LayerNorm/` |
 | **E2** | **+ Depthwise Conv** Downsampling | `python train.py --exp_mode E2` | `outputs/E2_DepthwiseDownsample/` |
 | **E3** | **+ FFN / MLP** Blocks | `python train.py --exp_mode E3` | `outputs/E3_FFN/` |

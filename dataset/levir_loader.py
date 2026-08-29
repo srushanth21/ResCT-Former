@@ -13,6 +13,7 @@ from dataset.transforms import (
     Normalize,
     RandomBrightnessContrast,
     RandomHorizontalFlip,
+    RandomResizedCrop,
     RandomRotate90,
     RandomVerticalFlip,
     RandomTemporalSwap,
@@ -42,6 +43,7 @@ class LEVIRCDDataset(Dataset):
             if self.augment:
                 transforms.extend(
                     [
+                        RandomResizedCrop(),
                         RandomHorizontalFlip(),
                         RandomVerticalFlip(),
                         RandomRotate90(),

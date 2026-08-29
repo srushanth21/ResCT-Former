@@ -7,7 +7,7 @@ from tqdm import tqdm
 from config import Config
 from models.model import AdaptiveScratchFormerCD
 from utils.losses import BCEDiceLoss
-from utils.metrics import MetricTracker, batch_metrics_from_logits
+from utils.metrics import MetricTracker, batch_metrics_from_logits, batch_counts_from_logits
 from utils.train_utils import get_dataloaders, load_checkpoint, save_change_overlay
 
 
@@ -27,10 +27,10 @@ def test(model, loader, criterion, device, save_vis_dir: str = "") -> MetricTrac
 
         logits = model(pre, post)
         loss = criterion(logits, mask)
-        iou, f1, oa = batch_metrics_from_logits(logits, mask)
+        tp, fp, fn, tn = batch_counts_from_logits(logits, mask)
 
         bs = pre.size(0)
-        tracker.update(loss.item(), iou, f1, oa, bs)
+        tracker.update(loss.item(), tp, fp, fn, tn, bs)
 
         if save_vis_dir and i < 10:
             pred = (torch.sigmoid(logits[0]) > 0.5).float().cpu()

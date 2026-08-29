@@ -3,24 +3,26 @@ import torch.nn as nn
 
 
 class CEFF(nn.Module):
-    """Cross-level Edge Feature Fusion (CEFF) - Non-Linear Fusion Update.
+    """Cross-level Edge Feature Fusion (CEFF) - Symmetric Non-Linear Fusion Update.
 
-    Instead of linear subtraction, this uses concatenation and a spatial convolution
-    to learn complex, non-linear change features from perfectly aligned feature maps.
+    Uses Absolute Difference (which is perfectly mathematically symmetric) 
+    followed by a spatial convolution to learn complex, non-linear change features 
+    from perfectly aligned feature maps without confusing the network on temporal swaps.
     """
 
-    def __init__(self, channels: int, reduction: int = 2):
+    def __init__(self, channels: int, reduction: int = 2, dropout: float = 0.1):
         super().__init__()
-        # We replace the channel attention MLP with a non-linear spatial fusion block
         self.fuse = nn.Sequential(
-            nn.Conv2d(channels * 2, channels, kernel_size=3, padding=1, bias=False),
+            nn.Conv2d(channels, channels, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(channels),
-            nn.ReLU(inplace=True)
+            nn.ReLU(inplace=True),
+            nn.Dropout2d(dropout),
         )
 
     def forward(self, f_pre: torch.Tensor, f_post: torch.Tensor) -> torch.Tensor:
-        # Concatenate pre and post along the channel dimension -> [B, 2C, H, W]
-        fcat = torch.cat([f_pre, f_post], dim=1)
+        # Symmetric difference -> [B, C, H, W]
+        diff = torch.abs(f_pre - f_post)
         # Learn non-linear differences -> [B, C, H, W]
-        change_features = self.fuse(fcat)
+        change_features = self.fuse(diff)
         return change_features
+

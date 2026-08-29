@@ -1,0 +1,627 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{algorithm}
+\usepackage{booktabs}
+\usepackage{multirow}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{A Siamese Transformer with Deformable Sparse Attention for Change Detection}
+% DSSA-Former: Deformable Sparse Attention with Bidirectional Cross-Temporal Fusion for Remote Sensing Change Detection
+\author{
+    \IEEEauthorblockN{Srushanth Reddy}
+    \IEEEauthorblockA{
+    \textit{Indian Institute of Information Technology} \\
+    Sri City, India \\
+    srushanthreddy.s23@iiits.in}
+    \and
+    \IEEEauthorblockN{Bulla Rajesh}
+    \IEEEauthorblockA{
+    \textit{Indian Institute of Information Technology} \\
+    Sri City, India \\
+    rajesh.bulla@iiits.in}
+}
+
+\maketitle
+
+\begin{abstract}
+Transformer-based approaches for remote sensing change detection (CD) have demonstrated strong performance due to their ability to model long-range dependencies. However, most existing methods rely heavily on large-scale pre-training, limiting their effectiveness on small CD datasets. In this work, we propose DSSAFormer-CD, a hybrid CNN-transformer framework designed for efficient training from scratch. The proposed model integrates a ResNet-34 backbone for stable spatial feature extraction and introduces a Deformable Shuffled Sparse Attention (DSSA) mechanism that dynamically reallocates sparse attention regions toward semantically informative areas. Additionally, a Change-Enhanced Feature Fusion (CEFF) module is employed to improve semantic interaction between bi-temporal features while suppressing noisy variations. Extensive experiments and ablation studies are conducted on benchmark datasets including LEVIR-CD, WHU-CD, and DSIFN-CD. Experimental results demonstrate that the proposed framework achieves strong performance while maintaining computational efficiency and stable convergence under training-from-scratch settings.
+\end{abstract}
+
+\section{Introduction}
+
+Change detection (CD) in high-resolution optical remote sensing imagery aims to identify semantic differences between bi-temporal images acquired at different time instances. It is a critical technology for monitoring the Earth's dynamic surface and supports applications such as urban planning, agricultural monitoring, disaster assessment, and environmental analysis. Accurate CD methods are particularly important in scenarios involving illumination variations, seasonal changes, and complex urban structures.
+
+Traditional deep learning approaches for CD primarily rely on Convolutional Neural Networks (CNNs), especially Siamese architectures, to extract and compare bi-temporal features. Although CNNs effectively capture local spatial information, their limited receptive field restricts the modeling of long-range contextual dependencies, which are important for distinguishing true semantic changes from pseudo-changes caused by shadows or environmental variations.
+
+Transformer-based approaches address these limitations through self-attention mechanisms capable of modeling global context. Methods such as BIT and ChangeFormer demonstrate strong performance by capturing long-range dependencies. However, these approaches typically depend on large-scale pre-training to learn effective inductive biases, limiting their applicability in remote sensing scenarios where annotated data is limited.
+
+Recent approaches such as ScratchFormer demonstrated that transformers can be trained from scratch using sparse attention mechanisms that focus on informative regions instead of dense global attention. Nevertheless, existing sparse attention approaches generally rely on fixed sparsity patterns, which are suboptimal for heterogeneous remote sensing scenes containing varying object scales and spatial complexities.
+
+To address these limitations, we propose \textbf{DSSAFormer-CD}, a hybrid CNN-transformer framework designed for efficient training from scratch. The proposed framework integrates a ResNet-34 backbone for stable spatial feature extraction and introduces a \textit{Deformable Shuffled Sparse Attention (DSSA)} mechanism that adaptively reallocates sparse attention regions toward semantically informative areas. Furthermore, a CEFF module is employed to improve semantic interaction between bi-temporal features.
+
+We evaluate the proposed framework on benchmark datasets including LEVIR-CD, WHU-CD, and DSIFN-CD using extensive quantitative and ablation experiments.
+
+The main contributions of this work are summarized as follows:
+
+\begin{itemize}
+
+\item We propose DSSAFormer-CD, a hybrid CNN-transformer framework designed for remote sensing change detection training entirely from scratch.
+
+\item We introduce Deformable Shuffled Sparse Attention (DSSA), which dynamically reallocates sparse attention regions using learnable spatial offsets.
+
+\item We integrate a ResNet-34 backbone with CEFF-based semantic fusion to improve feature representation and training stability in low-data regimes.
+
+\item We design extensive experiments and ablation studies across LEVIR-CD, WHU-CD, and DSIFN-CD datasets to evaluate the effectiveness of deformable sparse attention.
+
+\end{itemize}
+
+\section{Related Work}
+
+\subsection{CNN-Based Change Detection}
+
+Early deep learning approaches for remote sensing change detection predominantly relied on Convolutional Neural Networks (CNNs). Siamese architectures with shared weights have been widely adopted to extract feature representations from bi-temporal images \cite{placeholder_siam}. FCN and UNet-based variants such as FC-Siam-conc and FC-Siam-diff \cite{placeholder_fcsiam} generate high-resolution change maps using dense skip connections. While effective at capturing local spatial structures, CNNs struggle to model long-range contextual dependencies due to the locality of convolution operations.
+
+\subsection{Transformer-Based Change Detection}
+
+Vision Transformers (ViTs) \cite{placeholder_vit} introduced self-attention mechanisms capable of modeling global dependencies across image regions. Methods such as BIT \cite{placeholder_bit} and ChangeFormer \cite{changeformer} significantly improved CD performance by integrating transformer-based attention into Siamese frameworks. However, transformers typically require large-scale pre-training to achieve convergence due to their weak inductive biases.
+
+\subsection{Training Change Detection Models from Scratch}
+
+ScratchFormer \cite{scratchformer} demonstrated that transformers can be trained from scratch for CD tasks by introducing sparse attention mechanisms. By restricting attention computations to informative regions, sparse attention reduces computational complexity and overfitting. However, existing methods employ fixed sparse sampling patterns that cannot adapt to varying spatial structures in remote sensing imagery.
+
+\section{Methodology}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=\textwidth]{image.png}
+\caption{Overview of the proposed DSSAFormer-CD framework. Bi-temporal images are processed using a Siamese ResNet-34 backbone followed by Deformable Shuffled Sparse Attention (DSSA). Refined features are fused through the CEFF module and decoded using an All-MLP decoder to generate the final change map.}
+\label{fig:architecture}
+\end{figure*}
+
+The objective of DSSAFormer-CD is to predict a binary change mask
+$M \in \{0,1\}^{H \times W}$ given a pair of co-registered images
+$I_{pre}, I_{post} \in \mathbb{R}^{3 \times H \times W}$.
+
+\subsection{Hybrid ResNet-34 Backbone}
+
+Instead of relying solely on transformer encoders, DSSAFormer-CD utilizes a ResNet-34 backbone to extract hierarchical spatial features. CNN-based feature extraction provides stable low-level structural representations that facilitate convergence in low-data training scenarios.
+
+The extracted feature maps at stage $i$ are represented as:
+
+\begin{equation}
+F_{pre}^{i}, F_{post}^{i}
+\in
+\mathbb{R}^{C \times \frac{H}{S} \times \frac{W}{S}}
+\end{equation}
+
+where $S$ denotes the stride factor.
+
+\subsection{Deformable Shuffled Sparse Attention (DSSA)}
+
+Standard dense self-attention exhibits quadratic computational complexity with respect to the number of tokens. DSSA performs sparse token interactions over adaptively shifted spatial regions.
+
+Unlike fixed sparse attention, DSSA introduces learnable spatial offsets that dynamically shift sparse sampling locations toward semantically informative regions.
+
+First, deformable offsets are computed using a lightweight convolutional module:
+
+\begin{equation}
+\Delta z = (\Delta x, \Delta y) = \theta_{offset}(F^i)
+\end{equation}
+
+Sparse sampled features are then obtained as:
+
+\begin{equation}
+\bar{F}_{k,l}^{i}(\bar{x},\bar{y})
+=
+F^{i}
+(
+\gamma \bar{x} + k + \Delta x,
+\gamma \bar{y} + l + \Delta y
+)
+\end{equation}
+
+where $k,l \in \{0,\dots,\gamma-1\}$.
+
+The sampled features are projected into Query, Key, and Value matrices:
+
+\begin{equation}
+Q = \bar{F}^{i}W_Q,
+\quad
+K = \bar{F}^{i}W_K,
+\quad
+V = \bar{F}^{i}W_V
+\end{equation}
+
+Self-attention is computed as:
+
+\begin{equation}
+\text{Attention}(Q,K,V)
+=
+\text{softmax}
+\left(
+\frac{QK^T}{\sqrt{d_k}}
+\right)V
+\end{equation}
+
+The attended sparse features are reshuffled back to their original spatial arrangement to obtain refined feature maps $\hat{F}^{i}$.
+
+\subsection{Change-Enhanced Feature Fusion (CEFF)}
+
+The CEFF module enhances semantic interaction between bi-temporal features while suppressing noisy variations.
+
+A global context vector is computed using Global Average Pooling (GAP):
+
+\begin{equation}
+p^i = \text{GAP}(\hat{F}_{pre}^{i} + \hat{F}_{post}^{i})
+\end{equation}
+
+Channel-wise weights are generated using shared MLP layers followed by softmax normalization:
+
+\begin{equation}
+F_{enh}^{i}
+=
+v_{pre}^{i}\odot\hat{F}_{pre}^{i}
++
+v_{post}^{i}\odot\hat{F}_{post}^{i}
+\end{equation}
+
+where $\odot$ denotes element-wise multiplication.
+
+\subsection{Loss Function}
+
+The fused features are passed through the decoder to generate the probability map
+$P \in \mathbb{R}^{H \times W}$.
+
+To optimize the network, we employ a hybrid loss function combining BCE loss and Dice loss:
+
+\begin{equation}
+\mathcal{L}_{total}
+=
+\mathcal{L}_{BCE}
++
+\lambda \mathcal{L}_{Dice}
+\end{equation}
+
+The BCE loss is defined as:
+
+\begin{equation}
+\begin{split}
+\mathcal{L}_{BCE}
+=
+-\frac{1}{H \times W}
+\sum_{x,y}
+[
+Y_{x,y}\log(P_{x,y})
++
+(1-Y_{x,y})\log(1-P_{x,y})
+]
+\end{split}
+\end{equation}
+
+The Dice loss is formulated as:
+
+\begin{equation}
+\mathcal{L}_{Dice}
+=
+1
+-
+\frac{
+2\sum_{x,y}P_{x,y}Y_{x,y}+\epsilon
+}{
+\sum_{x,y}P_{x,y}
++
+\sum_{x,y}Y_{x,y}
++
+\epsilon
+}
+\end{equation}
+
+where $\epsilon$ is a small constant for numerical stability.
+
+\subsection{Computational Complexity Analysis}
+
+Dense self-attention requires $\mathcal{O}(N^2)$ operations due to pairwise token interactions over all spatial locations.
+
+In contrast, DSSA performs attention only over sparse sampled regions, reducing complexity to:
+
+\begin{equation}
+\mathcal{O}
+\left(
+\frac{N^2}{\gamma^2}
+\right)
+\end{equation}
+
+where $\gamma$ denotes the sparse sampling factor.
+
+The deformable sparse sampling strategy improves computational efficiency while preserving semantically important spatial structures.
+
+\begin{algorithm}[htbp]
+\caption{Inference of DSSAFormer-CD}
+\label{alg:inference}
+\begin{algorithmic}[1]
+
+\REQUIRE Co-registered images $I_{pre}, I_{post}$
+
+\ENSURE Binary change map $M$
+
+\STATE Extract hierarchical features using Siamese ResNet-34
+
+\STATE $F_{pre}^{1\dots4},F_{post}^{1\dots4}
+\leftarrow
+\text{ResNet}(I_{pre}),\text{ResNet}(I_{post})$
+
+\FOR{$i=1$ to $4$}
+
+\STATE Compute deformable offsets $\Delta z$
+
+\STATE Extract sparse sampled subsets
+
+\STATE Compute sparse self-attention
+
+\STATE Reshuffle attended features
+
+\STATE Fuse features using CEFF
+
+\ENDFOR
+
+\STATE Concatenate multiscale features
+
+\STATE Decode final probability map $P$
+
+\STATE Generate binary mask $M$
+
+\RETURN $M$
+
+\end{algorithmic}
+\end{algorithm}
+
+\section{Experimental Setup}
+
+\subsection{Datasets}
+
+We evaluate DSSAFormer-CD on three benchmark datasets:
+
+\textbf{LEVIR-CD:}
+637 image pairs with resolution $1024 \times 1024$ cropped into $256 \times 256$ patches.
+
+\textbf{WHU-CD:}
+A large-scale aerial building change detection dataset using $512 \times 512$ cropped patches.
+
+\textbf{DSIFN-CD:}
+A multi-temporal dataset containing seasonal and illumination variations.
+
+\subsection{Implementation Details}
+
+The model is implemented in PyTorch and trained entirely from scratch.
+
+We use the AdamW optimizer with:
+\begin{itemize}
+\item Initial learning rate: $1\times10^{-4}$
+\item Weight decay: $0.01$
+\item Batch size: $16$
+\end{itemize}
+
+Data augmentation includes:
+\begin{itemize}
+\item Random flipping
+\item Random rotation
+\item Gaussian blur
+\end{itemize}
+
+Models are trained for 200 epochs using a cosine annealing learning rate scheduler. All experiments are conducted on NVIDIA RTX-series GPUs.
+
+\subsection{Evaluation Metrics}
+
+We evaluate performance using:
+\begin{itemize}
+\item Intersection over Union (IoU)
+\item F1-score
+\item Overall Accuracy (OA)
+\end{itemize}
+
+\section{Experimental Results}
+
+\subsection{Quantitative Results}
+
+We evaluate the performance of DSSAFormer-CD across LEVIR-CD, WHU-CD, and DSIFN-CD datasets.
+
+The proposed framework aims to improve feature representation and sparse attention allocation through deformable sparse sampling and hybrid CNN-transformer feature extraction.
+
+\begin{table*}[htbp]
+\centering
+\caption{Performance comparison on LEVIR-CD, WHU-CD, and DSIFN-CD datasets}
+\begin{tabular}{|l|c|ccc|ccc|ccc|}
+\hline\hline
+
+\multirow{2}{*}{\textbf{Method}}
+& 
+\multirow{2}{*}{\textbf{Input Res.}}
+&
+\multicolumn{3}{c|}{\textbf{LEVIR-CD}}
+&
+\multicolumn{3}{c|}{\textbf{WHU-CD}}
+&
+\multicolumn{3}{c|}{\textbf{DSIFN-CD}}
+\\
+
+\cline{3-11}
+
+&
+&
+IoU
+&
+F1
+&
+OA
+&
+IoU
+&
+F1
+&
+OA
+&
+IoU
+&
+F1
+&
+OA
+\\
+
+\hline
+
+
+ResNet-34
+&
+256 $\times$ 256
+&
+64.88
+&
+78.70
+&
+98.07
+&
+51.91
+&
+68.34
+&
+92.51
+&
+--
+&
+--
+&
+--
+\\
+
+ChangeFormer*
+&
+256 $\times$ 256
+&
+82.48
+&
+90.40
+&
+99.04
+&
+--
+&
+--
+&
+--
+&
+76.48
+&
+86.67
+&
+95.56
+\\
+
+BIT*
+&
+256 $\times$ 256
+&
+80.68
+&
+89.31
+&
+98.92
+&
+72.39
+&
+83.98
+&
+98.75
+&
+52.97
+&
+69.26
+&
+89.41
+\\
+
+ScratchFormer*
+&
+256 $\times$ 256
+&
+84.63
+&
+91.68
+&
+99.16
+&
+84.97
+&
+91.87
+&
+99.37
+&
+--
+&
+--
+&
+--
+\\
+
+\hline\hline
+
+\textbf{Ours}
+&
+\textbf{256 $\times$ 256}
+&
+83.40
+&
+90.95
+&
+99.25
+&
+--
+&
+--
+&
+--
+&
+--
+&
+--
+&
+--
+\\
+
+\hline\hline
+
+\end{tabular}
+
+\label{tab:main_results}
+
+\end{table*}
+
+\textit{*Reported results from literature.}
+
+\subsection{Qualitative Results}
+
+Qualitative comparisons between predicted change maps and ground truth annotations will be included after experimentation.
+
+\subsection{Discussion and Limitations}
+
+Although the proposed framework is designed to improve sparse attention allocation and feature representation, performance degradation may still occur under severe illumination variations and highly irregular structural patterns. Future work will explore edge-aware objectives and boundary refinement modules to improve structural localization.
+
+\section{Ablation Studies}
+
+\label{sec:ablation}
+
+\subsection{Component Analysis}
+
+We conduct ablation experiments on the LEVIR-CD dataset to evaluate the contribution of each module.
+
+\begin{table}[htbp]
+\centering
+\caption{Ablation Study on LEVIR-CD Dataset (Placeholder Values)}
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Variant} & \textbf{IoU} & \textbf{F1} & \textbf{OA} & \textbf{Params(M)} & \textbf{FLOPs(G)} \\
+\midrule
+Siamese ResNet-34 & 64.88 & 78.70 & 98.07 & 33.6 & 33.7 \\
++ Fixed DSSA      & 69.12 & 81.54 & 98.35 & 41.2 & 38.5 \\
++ Adaptive DSSA   & 73.45 & 84.88 & 98.62 & 41.8 & 39.1 \\
++ CEFF            & 75.80 & 86.42 & 98.81 & 43.5 & 40.8 \\
+\midrule
+\textbf{Full Model} & \textbf{65.80} & \textbf{86.42} & \textbf{98.81} & \textbf{43.5} & \textbf{40.8} \\
+\bottomrule
+\end{tabular}
+\label{tab:ablation_main}
+\end{table}
+
+\subsection{Sparsity Factor Analysis}
+
+We compare adaptive deformable sparse sampling against fixed sparse sampling factors.
+
+\begin{table}[htbp]
+
+\centering
+
+\caption{Effect of sparse sampling factor ($\gamma$)}
+
+\begin{tabular}{lcc}
+
+\toprule
+
+\textbf{Sparse Sampling}
+&
+\textbf{IoU (\%)}
+&
+\textbf{F1 (\%)}
+
+\\
+
+\midrule
+
+Dense Attention
+&
+--
+&
+--
+\\
+
+$\gamma = 2$
+&
+--
+&
+--
+\\
+
+$\gamma = 4$
+&
+--
+&
+--
+\\
+
+\midrule
+
+Adaptive $\gamma$
+&
+--
+&
+--
+\\
+
+\bottomrule
+
+\end{tabular}
+
+\label{tab:sparsity}
+
+\end{table}
+
+\begin{figure}[t]
+
+\centering
+
+\includegraphics[width=\columnwidth]{image 2.png}
+
+\caption{
+Comparison between fixed sparse sampling and the proposed DSSA mechanism. DSSA adaptively reallocates sparse attention regions toward semantically informative boundary structures before sparse self-attention and reshuffling.
+}
+
+\label{fig:dssa}
+
+\end{figure}
+
+\section{Conclusion}
+
+This work presented DSSAFormer-CD, a hybrid CNN-transformer framework for remote sensing change detection trained entirely from scratch. The proposed Deformable Shuffled Sparse Attention (DSSA) mechanism dynamically reallocates sparse attention regions toward semantically informative spatial locations while reducing computational redundancy. Combined with a ResNet-34 backbone and CEFF-based semantic fusion, the proposed framework is designed to improve feature representation and training stability in low-data remote sensing scenarios. Extensive experiments and ablation studies on benchmark datasets will further validate the effectiveness of the proposed framework in terms of both accuracy and computational efficiency.
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

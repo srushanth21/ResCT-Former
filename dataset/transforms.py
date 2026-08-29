@@ -15,6 +15,31 @@ class Compose:
         return pre, post, mask
 
 
+class RandomResizedCrop:
+    """Randomly crops a region between scale_range of the original size,
+    then resizes it back to the original size. Forces multi-scale learning."""
+    def __init__(self, scale_range: tuple = (0.5, 1.0), p: float = 0.5) -> None:
+        self.scale_min = float(scale_range[0])
+        self.scale_max = float(scale_range[1])
+        self.p = float(p)
+
+    def __call__(self, pre: np.ndarray, post: np.ndarray, mask: np.ndarray):
+        if random.random() >= self.p:
+            return pre, post, mask
+        h, w = pre.shape[:2]
+        scale = random.uniform(self.scale_min, self.scale_max)
+        crop_h = int(h * scale)
+        crop_w = int(w * scale)
+        top = random.randint(0, h - crop_h)
+        left = random.randint(0, w - crop_w)
+        
+        pre = cv2.resize(pre[top:top+crop_h, left:left+crop_w], (w, h), interpolation=cv2.INTER_LINEAR)
+        post = cv2.resize(post[top:top+crop_h, left:left+crop_w], (w, h), interpolation=cv2.INTER_LINEAR)
+        mask = cv2.resize(mask[top:top+crop_h, left:left+crop_w], (w, h), interpolation=cv2.INTER_NEAREST)
+        
+        return pre, post, mask
+
+
 class RandomHorizontalFlip:
     def __init__(self, p: float = 0.5) -> None:
         self.p = float(p)
