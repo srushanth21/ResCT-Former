@@ -336,6 +336,18 @@ def main():
 
                 scaler.unscale_(optimizer)
 
+                # Check for NaN/Inf in gradients BEFORE stepping
+                grad_ok = True
+                for p in model.parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all():
+                        grad_ok = False
+                        break
+
+                if not grad_ok:
+                    optimizer.zero_grad(set_to_none=True)
+                    scaler.update()
+                    continue
+
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(),
                     args.grad_clip_norm
@@ -348,6 +360,17 @@ def main():
             else:
 
                 loss.backward()
+
+                # Check for NaN/Inf in gradients BEFORE stepping
+                grad_ok = True
+                for p in model.parameters():
+                    if p.grad is not None and not torch.isfinite(p.grad).all():
+                        grad_ok = False
+                        break
+
+                if not grad_ok:
+                    optimizer.zero_grad(set_to_none=True)
+                    continue
 
                 torch.nn.utils.clip_grad_norm_(
                     model.parameters(),
@@ -415,6 +438,41 @@ def main():
             f.write(summary_str + "\n")
 
         # -------------------------
+        # Crash Recovery
+        # -------------------------
+        # If val loss is NaN or val IoU collapsed (dropped >20% below best),
+        # reload the best checkpoint and continue training from there.
+
+        val_crashed = (
+            not math.isfinite(val_loss)
+            or (best_iou > 0.5 and val_iou < best_iou * 0.8)
+        )
+
+        if val_crashed and os.path.exists(best_path):
+            crash_str = f"CRASH DETECTED at epoch {epoch} — reloading best checkpoint (iou={best_iou:.4f})"
+            print(crash_str)
+            with open(args.log_file_path, "a", encoding="utf-8") as f:
+                f.write(crash_str + "\n")
+
+            # Reload best model weights
+            ckpt_recovery = torch.load(best_path, map_location=device, weights_only=False)
+            model.load_state_dict(ckpt_recovery["model_state_dict"])
+
+            # Reset optimizer state to clear any corrupted momentum
+            optimizer = torch.optim.AdamW([
+                {"params": [p for n, p in model.named_parameters() if "backbone" in n], "lr": lr_now * 0.1},
+                {"params": [p for n, p in model.named_parameters() if "backbone" not in n], "lr": lr_now}
+            ], weight_decay=args.weight_decay)
+
+            # Reset AMP scaler
+            if hasattr(torch, "amp"):
+                scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+            else:
+                scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+
+            continue
+
+        # -------------------------
         # Save Last Checkpoint
         # -------------------------
 
@@ -449,4 +507,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()

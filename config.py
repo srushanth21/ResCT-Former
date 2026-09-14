@@ -10,10 +10,10 @@ class Config:
     batch_size: int = 8
     num_workers: int = 2
 
-    epochs: int = 100
+    epochs: int = 150
     lr: float = 3e-4
     weight_decay: float = 1e-4
-    grad_clip_norm: float = 1.0
+    grad_clip_norm: float = 0.5
 
     # Deformable SSA
     ssa_heads: int = 8
@@ -27,5 +27,5 @@ class Config:
     warmup_epochs: int = 5
 
     # Misc
-    seed: int = 1337
+    seed: int = 1579
     amp: bool = True                                                                                                                                                                                                                
