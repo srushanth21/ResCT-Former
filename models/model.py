@@ -29,7 +29,8 @@ class AdaptiveScratchFormerCD(nn.Module):
         exp_mode: str = "E0",
     ):
         super().__init__()
-
+        
+        self.exp_mode = exp_mode.upper()
         self.backbone = ResNet34Backbone()
 
         # Cross-Temporal Attention at stages 3 & 4
@@ -41,12 +42,12 @@ class AdaptiveScratchFormerCD(nn.Module):
         )
 
         # CEFF (symmetric abs diff + conv)
-        self.ceff1 = CEFF(64)
-        self.ceff2 = CEFF(128)
-        self.ceff3 = CEFF(256)
-        self.ceff4 = CEFF(512)
+        self.ceff1 = CEFF(64, exp_mode=self.exp_mode)
+        self.ceff2 = CEFF(128, exp_mode=self.exp_mode)
+        self.ceff3 = CEFF(256, exp_mode=self.exp_mode)
+        self.ceff4 = CEFF(512, exp_mode=self.exp_mode)
 
-        self.decoder = ProgressiveDecoder(embed_dim=embed_dim)
+        self.decoder = ProgressiveDecoder(embed_dim=embed_dim, exp_mode=self.exp_mode)
 
         # Deep Supervision Classifiers
         self.classifier_f2 = nn.Conv2d(128, 1, kernel_size=1)
@@ -58,8 +59,12 @@ class AdaptiveScratchFormerCD(nn.Module):
         post_c1, post_c2, post_c3, post_c4 = self.backbone(post)
 
         # 2. CROSS-TEMPORAL ATTENTION: each image attends to the other
-        pre_c3, post_c3 = self.cross_attn3(pre_c3, post_c3)
-        pre_c4, post_c4 = self.cross_attn4(pre_c4, post_c4)
+        if self.exp_mode == "A1":
+            # Ablation A1: Skip CTA entirely
+            pass
+        else:
+            pre_c3, post_c3 = self.cross_attn3(pre_c3, post_c3)
+            pre_c4, post_c4 = self.cross_attn4(pre_c4, post_c4)
 
         # 3. FUSE: symmetric change features
         f1 = self.ceff1(pre_c1, post_c1)

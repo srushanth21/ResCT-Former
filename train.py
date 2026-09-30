@@ -78,6 +78,12 @@ def main():
     # The default value from Config (0.01 or 0.001) will be used unless overridden.
     if args.output_dir == "outputs":
         exp_names = {
+            "A0": "A0_FullModel",
+            "A1": "A1_NoCTA",
+            "A2": "A2_NoPixelShuffle",
+            "A3": "A3_NoFocalLoss",
+            "A4": "A4_NoCEFF",
+            # Legacy modes below
             "E0": "E0_baseline",
             "E1": "E1_LayerNorm",
             "E2": "E2_DepthwiseDownsample",
@@ -145,7 +151,9 @@ def main():
         exp_mode=args.exp_mode,
     ).to(device)
 
-    criterion = BCEDiceLoss()
+    # Ablation A3: Disable Focal Loss
+    f_weight = 0.0 if args.exp_mode.upper() == "A3" else 0.5
+    criterion = BCEDiceLoss(focal_weight=f_weight)
 
     backbone_params = []
     other_params = []

@@ -106,11 +106,11 @@ $$\text{CEFF} = \text{Dropout}(\text{ReLU}(\text{BN}(\text{Conv}_{3\times3}(\ver
 
 
 2. **Deep Supervision (Auxiliary Heads):**
-* Draw dashed arrows branching out from $f_2$ and $f_3$ leading to small boxes labeled **`Aux Loss (0.2)`** and **`Aux Loss (0.4)`**.
+* Draw dashed arrows branching out directly from the CEFF outputs $f_2$ and $f_3$ (before they enter the decoder skip connections) leading to small boxes labeled **`Aux Loss (0.2)`** and **`Aux Loss (0.4)`**.
 
 
 3. **Final Classification Head:**
-* Connect the output of the decoder to a block: `Conv(256→128) → BN → ReLU → Conv(128→1) → 4× Upsample`.
+* Connect the output of the decoder to a block: `Conv(256→128) → BN → ReLU → Conv(128→64) → PixelShuffle(4× Upsample) → Conv(64→1)`.
 
 
 

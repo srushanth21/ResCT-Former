@@ -10,7 +10,7 @@ class Config:
     batch_size: int = 8
     num_workers: int = 2
 
-    epochs: int = 150
+    epochs: int = 50
     lr: float = 3e-4
     weight_decay: float = 1e-4
     grad_clip_norm: float = 0.5
@@ -27,5 +27,5 @@ class Config:
     warmup_epochs: int = 5
 
     # Misc
-    seed: int = 1579
+    seed: int = 42
     amp: bool = True                                                                                                                                                                                                                

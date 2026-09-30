@@ -38,8 +38,9 @@ class ProgressiveDecoder(nn.Module):
     PixelShuffle for sharp boundary reconstruction.
     """
 
-    def __init__(self, c1: int = 64, c2: int = 128, c3: int = 256, c4: int = 512, embed_dim: int = 256):
+    def __init__(self, c1: int = 64, c2: int = 128, c3: int = 256, c4: int = 512, embed_dim: int = 256, exp_mode: str = "A0"):
         super().__init__()
+        self.exp_mode = exp_mode.upper()
 
         # Project all incoming features to a common embedding dimension
         self.proj4 = nn.Conv2d(c4, embed_dim, kernel_size=1)
@@ -67,6 +68,9 @@ class ProgressiveDecoder(nn.Module):
 
         # Final 1x1 head to produce single-channel logits
         self.head = nn.Conv2d(mid_ch, 1, kernel_size=1)
+        
+        # Fallback bilinear head for A2 mode
+        self.fallback_head = nn.Conv2d(mid_ch, 1, kernel_size=1)
 
     def _make_fuse_block(self, dim: int):
         return nn.Sequential(
@@ -105,15 +109,19 @@ class ProgressiveDecoder(nn.Module):
         # Classify at 1/4 resolution (embed_dim → embed_dim//4 channels)
         feat = self.classifier(f21)
 
-        # Learned 4x upsample via PixelShuffle (2x + 2x)
-        feat = self.upsample_2x_1(feat)  # H/4 → H/2
-        feat = self.upsample_2x_2(feat)  # H/2 → H
-
-        logits = self.head(feat)
-
-        # Safety: if PixelShuffle output doesn't exactly match target size
-        if logits.shape[2:] != out_size:
+        if self.exp_mode == "A2":
+            # Ablation A2: No PixelShuffle, just naive 4x bilinear
+            logits = self.fallback_head(feat)
             logits = F.interpolate(logits, size=out_size, mode="bilinear", align_corners=False)
+        else:
+            # Learned 4x upsample via PixelShuffle (2x + 2x)
+            feat = self.upsample_2x_1(feat)  # H/4 → H/2
+            feat = self.upsample_2x_2(feat)  # H/2 → H
+            logits = self.head(feat)
+
+            # Safety: if PixelShuffle output doesn't exactly match target size
+            if logits.shape[2:] != out_size:
+                logits = F.interpolate(logits, size=out_size, mode="bilinear", align_corners=False)
 
         return logits
 
