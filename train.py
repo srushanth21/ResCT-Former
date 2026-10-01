@@ -71,6 +71,7 @@ def main():
     parser.add_argument("--exp_mode", type=str, default="E0", help="Ablation experiment mode: E0, E1, E2, E3, E4, E5")
 
     parser.add_argument("--seed", type=int, default=Config().seed)
+    parser.add_argument("--stop_epoch", type=int, default=0, help="Stop training exactly at this epoch to save time when reproducing.")
 
     args = parser.parse_args()
 
@@ -214,8 +215,8 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    best_path = os.path.join(args.output_dir, "best.ckpt")
-    last_path = os.path.join(args.output_dir, "last.ckpt")
+    best_path = os.path.join(args.output_dir, f"best_seed{args.seed}.ckpt")
+    last_path = os.path.join(args.output_dir, f"last_seed{args.seed}.ckpt")
 
     best_iou = -1.0
     start_epoch = 1
@@ -479,6 +480,10 @@ def main():
                 scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
 
             continue
+
+        if args.stop_epoch > 0 and epoch == args.stop_epoch:
+            print(f"Stopping early at exactly epoch {epoch} as requested via --stop_epoch.")
+            break
 
         # -------------------------
         # Save Last Checkpoint
